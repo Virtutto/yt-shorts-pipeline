@@ -39,7 +39,7 @@ def _load_broll(broll_dir: str, duration: float) -> VideoFileClip | ColorClip:
     bg = VideoFileClip(broll_path).resized((VIDEO_W, VIDEO_H))
     if bg.duration < duration:
         n_loops = int(duration // bg.duration) + 1
-        bg = concatenate_videoclips([bg] * n_loops, method="chain").with_duration(duration)
+        bg = concatenate_videoclips([bg.copy() for _ in range(n_loops)], method="chain").with_duration(duration)
     else:
         bg = bg.with_duration(duration)
     return bg

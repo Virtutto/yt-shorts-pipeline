@@ -1,5 +1,3 @@
-import os
-import sys
 import tempfile
 from pathlib import Path
 from src.scrape_reddit import fetch_post

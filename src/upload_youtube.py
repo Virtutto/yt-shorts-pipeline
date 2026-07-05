@@ -13,7 +13,7 @@ def _get_authenticated_service():
     creds = None
     token_json = os.environ.get("YOUTUBE_TOKEN_JSON")
     if token_json:
-        creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
+        creds = Credentials.from_authorized_user_info(json.loads(token_json, strict=False), SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
