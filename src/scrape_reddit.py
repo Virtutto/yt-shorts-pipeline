@@ -1,37 +1,67 @@
 import os
 import random
-import praw
+import re
+import feedparser
+import requests
+from bs4 import BeautifulSoup
 from .seen_posts import is_seen, mark_seen
 
-SUBREDDITS = os.getenv("REDDIT_SUBREDDITS", "AskReddit+TIFU+ProRevenge+AITAH")
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+HEADERS = {"User-Agent": USER_AGENT}
+
+SUBREDDITS = os.getenv("REDDIT_SUBREDDITS", "AskReddit+TIFU+ProRevenge+AITAH").split("+")
 
 
-def _require_env(name: str) -> str:
-    value = os.environ.get(name)
-    if value is None:
-        raise RuntimeError(f"Missing required env var: {name}")
-    return value
+def _extract_post_id(entry_id: str) -> str | None:
+    m = re.search(r"/comments/(\w+)/", entry_id)
+    return m.group(1) if m else None
 
 
-def fetch_post(subreddits: str = SUBREDDITS) -> dict | None:
-    reddit = praw.Reddit(
-        client_id=_require_env("REDDIT_CLIENT_ID"),
-        client_secret=_require_env("REDDIT_CLIENT_SECRET"),
-        user_agent="yt-shorts-pipeline/1.0",
-    )
-    sub = reddit.subreddit(subreddits)
-    posts = list(sub.hot(limit=50))
-    for _ in range(50):
-        if not posts:
-            break
-        post = random.choice(posts)
-        if not is_seen(post.id) and post.score >= 100 and post.selftext:
-            mark_seen(post.id)
-            return {
-                "title": post.title,
-                "selftext": post.selftext[:2000],
-                "subreddit": post.subreddit.display_name,
-                "permalink": post.permalink,
-                "post_id": post.id,
-            }
+def _scrape_selftext(url: str) -> str:
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=10)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        div = soup.select_one(".usertext-body .md")
+        if div:
+            text = div.get_text(strip=True)
+            return text[:2000]
+        return ""
+    except Exception:
+        return ""
+
+
+def fetch_post(subreddits: list[str] | None = None) -> dict | None:
+    subs = subreddits or SUBREDDITS
+    random.shuffle(subs)
+
+    for sub in subs:
+        rss_url = f"https://www.reddit.com/r/{sub}/hot/.rss"
+        try:
+            feed = feedparser.parse(rss_url, agent=USER_AGENT)
+        except Exception:
+            continue
+
+        entries = list(feed.entries)
+        random.shuffle(entries)
+
+        for entry in entries:
+            post_id = _extract_post_id(entry.id)
+            if not post_id or is_seen(post_id):
+                continue
+
+            title = entry.title
+            link = f"https://old.reddit.com{entry.link}" if entry.link.startswith("/r/") else entry.link
+            selftext = _scrape_selftext(link)
+
+            if selftext or sub.lower() == "askreddit":
+                mark_seen(post_id)
+                return {
+                    "title": title,
+                    "selftext": selftext,
+                    "subreddit": sub,
+                    "permalink": f"https://reddit.com{entry.link}" if entry.link.startswith("/r/") else entry.link,
+                    "post_id": post_id,
+                }
+
     return None
