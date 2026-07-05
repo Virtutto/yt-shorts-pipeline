@@ -1,5 +1,6 @@
 import random
 from pathlib import Path
+import numpy as np
 from moviepy import VideoFileClip, AudioFileClip, ColorClip, ImageClip, CompositeVideoClip, concatenate_videoclips
 from PIL import Image, ImageDraw, ImageFont
 import textwrap
@@ -29,7 +30,7 @@ def _render_caption(text: str, w: int, h: int, duration: float) -> ImageClip:
     y = h - th - 60
     draw.multiline_text((x + 2, y + 2), wrapped, font=font, fill="black")
     draw.multiline_text((x, y), wrapped, font=font, fill="white")
-    return ImageClip(img).with_duration(duration)
+    return ImageClip(np.array(img)).with_duration(duration)
 
 
 def _load_broll(broll_dir: str, duration: float) -> VideoFileClip | ColorClip:
