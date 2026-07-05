@@ -1,3 +1,4 @@
+import os
 import random
 from pathlib import Path
 import numpy as np
@@ -6,30 +7,62 @@ from PIL import Image, ImageDraw, ImageFont
 import textwrap
 
 VIDEO_W, VIDEO_H = 1080, 1920
-CAPTION_FONT = "Arial.ttf"
-CAPTION_SIZE = 52
-MAX_CHARS = 42
+CAPTION_SIZE = 56
+MAX_CHARS = 38
+BG_HEIGHT = 120
+SHADOW_OFFSET = 3
+
+_FONT_CACHE = {}
 
 
-def _pick_broll(broll_dir: str) -> str | None:
-    clips = list(Path(broll_dir).glob("*.mp4"))
-    return str(random.choice(clips)) if clips else None
+def _find_font(size: int) -> ImageFont.FreeTypeFont:
+    key = ("font", size)
+    if key in _FONT_CACHE:
+        return _FONT_CACHE[key]
+    candidates = [
+        "Arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+    ]
+    for path in candidates:
+        try:
+            font = ImageFont.truetype(path, size)
+            _FONT_CACHE[key] = font
+            return font
+        except (OSError, IOError):
+            continue
+    font = ImageFont.load_default()
+    _FONT_CACHE[key] = font
+    return font
 
 
-def _render_caption(text: str, w: int, h: int, duration: float) -> ImageClip:
-    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    try:
-        font = ImageFont.truetype(CAPTION_FONT, CAPTION_SIZE)
-    except OSError:
-        font = ImageFont.load_default()
+def _render_caption(text: str, w: int, duration: float) -> ImageClip:
+    font = _find_font(CAPTION_SIZE)
     wrapped = textwrap.fill(text, width=MAX_CHARS)
-    bbox = draw.multiline_textbbox((0, 0), wrapped, font=font)
-    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    x = (w - tw) // 2
-    y = h - th - 60
-    draw.multiline_text((x + 2, y + 2), wrapped, font=font, fill="black")
-    draw.multiline_text((x, y), wrapped, font=font, fill="white")
+    lines = wrapped.count("\n") + 1
+    line_h = CAPTION_SIZE + 6
+    total_h = lines * line_h + 20
+    y_offset = BG_HEIGHT - total_h - 10
+
+    img = Image.new("RGBA", (w, BG_HEIGHT), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    draw.rounded_rectangle(
+        [(0, y_offset - 4), (w, y_offset + total_h + 4)],
+        radius=12, fill=(0, 0, 0, 180),
+    )
+
+    lines_list = wrapped.split("\n")
+    for i, line in enumerate(lines_list):
+        bbox = draw.textbbox((0, 0), line, font=font)
+        tw = bbox[2] - bbox[0]
+        x = (w - tw) // 2
+        y = y_offset + 10 + i * line_h
+
+        draw.text((x + SHADOW_OFFSET, y + SHADOW_OFFSET), line, font=font, fill=(0, 0, 0, 200))
+        draw.text((x, y), line, font=font, fill="white")
+
     return ImageClip(np.array(img)).with_duration(duration)
 
 
@@ -46,6 +79,11 @@ def _load_broll(broll_dir: str, duration: float) -> VideoFileClip | ColorClip:
     return bg
 
 
+def _pick_broll(broll_dir: str) -> str | None:
+    clips = list(Path(broll_dir).glob("*.mp4"))
+    return str(random.choice(clips)) if clips else None
+
+
 def assemble(script: str, audio_path: str, broll_dir: str, output_path: str) -> str:
     audio = AudioFileClip(audio_path)
     duration = audio.duration
@@ -56,9 +94,11 @@ def assemble(script: str, audio_path: str, broll_dir: str, output_path: str) -> 
     sentences = [s.strip() for s in script.replace("! ", "!\n").replace("? ", "?\n").split(". ") if s.strip()]
     chunk = duration / max(len(sentences), 1)
 
+    cap_w = VIDEO_W - 80
+
     for i, sentence in enumerate(sentences):
-        cap = _render_caption(sentence + ".", VIDEO_W - 80, 400, chunk)
-        cap = cap.with_position(("center", VIDEO_H * 0.7)).with_start(i * chunk)
+        cap = _render_caption(sentence + ".", cap_w, chunk)
+        cap = cap.with_position(("center", VIDEO_H * 0.82)).with_start(i * chunk)
         clips.append(cap)
 
     video = CompositeVideoClip(clips)
