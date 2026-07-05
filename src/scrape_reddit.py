@@ -51,7 +51,7 @@ def fetch_post(subreddits: list[str] | None = None) -> dict | None:
                 continue
 
             title = entry.title
-            link = f"https://old.reddit.com{entry.link}" if entry.link.startswith("/r/") else entry.link
+            link = entry.link.replace("https://www.reddit.com", "https://old.reddit.com")
             selftext = _scrape_selftext(link)
 
             if selftext or sub.lower() == "askreddit":
@@ -60,7 +60,7 @@ def fetch_post(subreddits: list[str] | None = None) -> dict | None:
                     "title": title,
                     "selftext": selftext,
                     "subreddit": sub,
-                    "permalink": f"https://reddit.com{entry.link}" if entry.link.startswith("/r/") else entry.link,
+                    "permalink": link.replace("old.reddit.com", "www.reddit.com"),
                     "post_id": post_id,
                 }
 
