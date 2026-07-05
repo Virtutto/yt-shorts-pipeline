@@ -1,5 +1,4 @@
 # tests/test_seen_posts.py
-from src.scrape_reddit import fetch_post
 from src.seen_posts import is_seen, mark_seen, DB_PATH
 import os
 

@@ -27,3 +27,19 @@ OK
 3. **`SUBREDDITS` default** — `os.getenv("REDDIT_SUBREDDITS", "AskReddit+TIFU+ProRevenge+AITAH")` is a module-level constant. Fine for now but could be made a function parameter override; already is via the `subreddits` parameter on `fetch_post`.
 4. **DB cleanup** — `seen_posts.db` is in `.gitignore` so it won't be committed. The test cleans up after itself.
 5. **Test import of `fetch_post`** — The test imports `fetch_post` but never calls it. If `praw` were missing the import itself would fail, but `praw` is in `requirements.txt` so this is fine.
+
+## Post-Review Fixes Applied (Task 2 Review)
+
+| # | Issue | Severity | File | Fix |
+|---|-------|----------|------|-----|
+| 1 | SQLite connection leak | Critical | `src/seen_posts.py` | Wrapped `conn` ops in `try/finally` in both `is_seen` and `mark_seen` |
+| 2 | Reddit API 50× redundant fetch | Critical | `src/scrape_reddit.py` | Moved `list(sub.hot(limit=50))` outside the loop |
+| 3 | Unused import | Important | `tests/test_seen_posts.py` | Removed `from src.scrape_reddit import fetch_post` |
+| 4 | `KeyError` on missing env vars | Important | `src/scrape_reddit.py` | Added `_require_env` helper with clear `RuntimeError` message; replaced bare `os.environ[]` access |
+
+## Test Results (Post-Fix)
+
+```
+$ python -c "from tests.test_seen_posts import *; test_mark_and_check(); print('OK')"
+OK
+```
