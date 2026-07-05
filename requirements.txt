@@ -1,0 +1,9 @@
+praw>=7.7,<8
+google-genai-sdk>=1.0,<2
+edge-tts>=6,<7
+moviepy>=2.0,<3
+google-auth-oauthlib>=1.0,<2
+google-auth-httplib2>=0.1,<1
+google-api-python-client>=2.0,<3
+Pillow>=10,<11
+numpy>=1.24,<2
