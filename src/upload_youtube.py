@@ -21,11 +21,18 @@ def _get_authenticated_service():
             raise RuntimeError("YouTube auth required — run auth setup locally first")
     return build("youtube", "v3", credentials=creds)
 
+def _make_title(raw: str) -> str:
+    clean = raw.replace("\n", " ").replace("\r", "").strip()
+    max_len = 90
+    if len(clean) <= max_len:
+        return clean + " #shorts"
+    return clean[:max_len].rsplit(" ", 1)[0] + " #shorts"
+
 def upload(video_path: str, post: dict) -> str:
     youtube = _get_authenticated_service()
     body = {
         "snippet": {
-            "title": f"{post['title']} #shorts",
+            "title": _make_title(post["title"]),
             "description": f"Story from r/{post['subreddit']}\n\n{post['permalink']}",
             "tags": ["shorts", "reddit", "storytime", post["subreddit"]],
         },
