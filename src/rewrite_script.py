@@ -1,5 +1,5 @@
 import os
-from google import genai
+from openai import OpenAI
 
 SYSTEM_PROMPT = """You are a YouTube Shorts scriptwriter. Rewrite Reddit stories into 55-65 second scripts.
 Rules:
@@ -9,10 +9,16 @@ Rules:
 - Output only the script text, no labels or commentary"""
 
 def rewrite_story(post: dict) -> str:
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-    prompt = f"Title: {post['title']}\n\nStory:\n{post['selftext']}"
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=[SYSTEM_PROMPT, prompt],
+    client = OpenAI(
+        api_key=os.environ["GROQ_API_KEY"],
+        base_url="https://api.groq.com/openai/v1",
     )
-    return response.text.strip()
+    prompt = f"Title: {post['title']}\n\nStory:\n{post['selftext']}"
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    return response.choices[0].message.content.strip()
