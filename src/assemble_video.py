@@ -4,7 +4,6 @@ from pathlib import Path
 import numpy as np
 from moviepy import VideoFileClip, AudioFileClip, ColorClip, ImageClip, CompositeVideoClip, concatenate_videoclips
 from PIL import Image, ImageDraw, ImageFont
-import textwrap
 
 VIDEO_W, VIDEO_H = 1080, 1920
 CAPTION_SIZE = 56
@@ -36,61 +35,46 @@ def _find_font(size: int) -> ImageFont.FreeTypeFont:
     return font
 
 
-def _render_karaoke_words(sentence: str, cap_w: int, total_duration: float) -> list:
-    font = _find_font(CAPTION_SIZE)
-    wrapped = textwrap.fill(sentence, width=MAX_CHARS)
-    lines = wrapped.split("\n")
+MAX_CHUNK_LEN = 22
 
-    word_map = []
-    for li, line in enumerate(lines):
-        for w in line.split(" "):
-            word_map.append((li, w))
 
-    n_words = len(word_map)
-    if n_words == 0:
+def _render_word_chunks(sentence: str, cap_w: int, total_duration: float) -> list:
+    words = sentence.split()
+    if not words:
         return []
 
-    word_duration = total_duration / n_words
+    chunks = []
+    i = 0
+    while i < len(words):
+        if i + 1 < len(words) and len(words[i] + " " + words[i + 1]) <= MAX_CHUNK_LEN:
+            chunks.append(words[i] + " " + words[i + 1])
+            i += 2
+        else:
+            chunks.append(words[i])
+            i += 1
+
+    chunk_dur = total_duration / max(len(chunks), 1)
+
+    font = _find_font(CAPTION_SIZE)
     line_h = CAPTION_SIZE + 10
     pad = OUTLINE_WIDTH
-    total_h = len(lines) * line_h + 60
+    total_h = line_h + pad * 2
 
-    space_w = None
     clips = []
-
-    for highlight_idx in range(n_words):
+    for idx, chunk in enumerate(chunks):
         img = Image.new("RGBA", (cap_w, total_h), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
 
-        widx = 0
-        x = 0
-        for line_idx, line in enumerate(lines):
-            line_bbox = draw.textbbox((0, 0), line, font=font)
-            line_w = line_bbox[2] - line_bbox[0]
-            x_offset = (cap_w - line_w) // 2
+        bbox = draw.textbbox((0, 0), chunk, font=font)
+        tw = bbox[2] - bbox[0]
+        x = (cap_w - tw) // 2
+        y = pad
 
-            for word in line.split(" "):
-                w_bbox = draw.textbbox((0, 0), word, font=font)
-                w_w = w_bbox[2] - w_bbox[0]
+        draw.text((x, y), chunk, font=font, fill="white",
+                  stroke_width=OUTLINE_WIDTH, stroke_fill=(0, 0, 0, 230))
 
-                if space_w is None:
-                    space_bbox = draw.textbbox((0, 0), " ", font=font)
-                    space_w = space_bbox[2] - space_bbox[0]
-
-                y = pad + line_idx * line_h
-                is_hl = widx == highlight_idx
-                color = "white" if is_hl else (160, 160, 160)
-
-                draw.text((x_offset + x, y), word, font=font, fill=color,
-                          stroke_width=OUTLINE_WIDTH, stroke_fill=(0, 0, 0, 200))
-
-                x += w_w + space_w
-                widx += 1
-
-            x = 0
-
-        clip = ImageClip(np.array(img)).with_duration(word_duration)
-        clip = clip.with_position(("center", VIDEO_H * 0.82)).with_start(highlight_idx * word_duration)
+        clip = ImageClip(np.array(img)).with_duration(chunk_dur)
+        clip = clip.with_position(("center", VIDEO_H * 0.82)).with_start(idx * chunk_dur)
         clips.append(clip)
 
     return clips
@@ -127,7 +111,7 @@ def assemble(script: str, audio_path: str, broll_dir: str, output_path: str) -> 
     cap_w = VIDEO_W - 80
 
     for i, sentence in enumerate(sentences):
-        word_clips = _render_karaoke_words(sentence + ".", cap_w, chunk)
+        word_clips = _render_word_chunks(sentence + ".", cap_w, chunk)
         sent_start = i * chunk
         for wc in word_clips:
             clips.append(wc.with_start(wc.start + sent_start))
