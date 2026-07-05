@@ -7,7 +7,6 @@ from src.rewrite_script import rewrite_story
 from src.generate_audio import generate_tts
 from src.assemble_video import assemble
 from src.upload_youtube import upload
-import asyncio
 
 BROLL_DIR = str(Path(__file__).parent.parent / "assets" / "broll")
 
@@ -40,7 +39,7 @@ def _generate_fallback_post() -> dict:
     }
 
 
-async def main():
+def main():
     print("[1/5] Scraping Reddit...")
     post = fetch_post()
     if not post:
@@ -53,7 +52,7 @@ async def main():
     with tempfile.TemporaryDirectory() as tmp:
         audio_path = f"{tmp}/audio.mp3"
         print("[3/5] Generating TTS...")
-        await generate_tts(script, audio_path)
+        generate_tts(script, audio_path)
 
         video_path = f"{tmp}/output.mp4"
         print("[4/5] Assembling video...")
@@ -65,4 +64,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
