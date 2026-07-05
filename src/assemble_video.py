@@ -36,27 +36,64 @@ def _find_font(size: int) -> ImageFont.FreeTypeFont:
     return font
 
 
-def _render_caption(text: str, w: int, duration: float) -> ImageClip:
+def _render_karaoke_words(sentence: str, cap_w: int, total_duration: float) -> list:
     font = _find_font(CAPTION_SIZE)
-    wrapped = textwrap.fill(text, width=MAX_CHARS)
-    lines_list = wrapped.split("\n")
+    wrapped = textwrap.fill(sentence, width=MAX_CHARS)
+    lines = wrapped.split("\n")
+
+    word_map = []
+    for li, line in enumerate(lines):
+        for w in line.split(" "):
+            word_map.append((li, w))
+
+    n_words = len(word_map)
+    if n_words == 0:
+        return []
+
+    word_duration = total_duration / n_words
     line_h = CAPTION_SIZE + 10
     pad = OUTLINE_WIDTH
-    total_h = len(lines_list) * line_h + pad * 2
+    total_h = len(lines) * line_h + 60
 
-    img = Image.new("RGBA", (w, total_h), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
+    space_w = None
+    clips = []
 
-    for i, line in enumerate(lines_list):
-        bbox = draw.textbbox((0, 0), line, font=font)
-        tw = bbox[2] - bbox[0]
-        x = (w - tw) // 2
-        y = pad + i * line_h
+    for highlight_idx in range(n_words):
+        img = Image.new("RGBA", (cap_w, total_h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
 
-        draw.text((x, y), line, font=font, fill="white",
-                  stroke_width=OUTLINE_WIDTH, stroke_fill=(0, 0, 0, 230))
+        widx = 0
+        x = 0
+        for line_idx, line in enumerate(lines):
+            line_bbox = draw.textbbox((0, 0), line, font=font)
+            line_w = line_bbox[2] - line_bbox[0]
+            x_offset = (cap_w - line_w) // 2
 
-    return ImageClip(np.array(img)).with_duration(duration)
+            for word in line.split(" "):
+                w_bbox = draw.textbbox((0, 0), word, font=font)
+                w_w = w_bbox[2] - w_bbox[0]
+
+                if space_w is None:
+                    space_bbox = draw.textbbox((0, 0), " ", font=font)
+                    space_w = space_bbox[2] - space_bbox[0]
+
+                y = pad + line_idx * line_h
+                is_hl = widx == highlight_idx
+                color = "white" if is_hl else (160, 160, 160)
+
+                draw.text((x_offset + x, y), word, font=font, fill=color,
+                          stroke_width=OUTLINE_WIDTH, stroke_fill=(0, 0, 0, 200))
+
+                x += w_w + space_w
+                widx += 1
+
+            x = 0
+
+        clip = ImageClip(np.array(img)).with_duration(word_duration)
+        clip = clip.with_position(("center", VIDEO_H * 0.82)).with_start(highlight_idx * word_duration)
+        clips.append(clip)
+
+    return clips
 
 
 def _load_broll(broll_dir: str, duration: float) -> VideoFileClip | ColorClip:
@@ -90,9 +127,10 @@ def assemble(script: str, audio_path: str, broll_dir: str, output_path: str) -> 
     cap_w = VIDEO_W - 80
 
     for i, sentence in enumerate(sentences):
-        cap = _render_caption(sentence + ".", cap_w, chunk)
-        cap = cap.with_position(("center", VIDEO_H * 0.82)).with_start(i * chunk)
-        clips.append(cap)
+        word_clips = _render_karaoke_words(sentence + ".", cap_w, chunk)
+        sent_start = i * chunk
+        for wc in word_clips:
+            clips.append(wc.with_start(wc.start + sent_start))
 
     video = CompositeVideoClip(clips)
     video = video.with_audio(audio)
