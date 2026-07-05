@@ -12,8 +12,8 @@ HEADERS = {"User-Agent": USER_AGENT}
 SUBREDDITS = os.getenv("REDDIT_SUBREDDITS", "AskReddit+TIFU+ProRevenge+AITAH").split("+")
 
 
-def _extract_post_id(entry_id: str) -> str | None:
-    m = re.search(r"/comments/(\w+)/", entry_id)
+def _extract_post_id(entry) -> str | None:
+    m = re.search(r"/comments/(\w+)/", entry.link)
     return m.group(1) if m else None
 
 
@@ -43,10 +43,12 @@ def fetch_post(subreddits: list[str] | None = None) -> dict | None:
             continue
 
         entries = list(feed.entries)
+        if not entries:
+            continue
         random.shuffle(entries)
 
         for entry in entries:
-            post_id = _extract_post_id(entry.id)
+            post_id = _extract_post_id(entry)
             if not post_id or is_seen(post_id):
                 continue
 
