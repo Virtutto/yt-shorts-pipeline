@@ -9,8 +9,7 @@ import textwrap
 VIDEO_W, VIDEO_H = 1080, 1920
 CAPTION_SIZE = 56
 MAX_CHARS = 38
-BG_HEIGHT = 120
-SHADOW_OFFSET = 3
+OUTLINE_WIDTH = 4
 
 _FONT_CACHE = {}
 
@@ -40,28 +39,22 @@ def _find_font(size: int) -> ImageFont.FreeTypeFont:
 def _render_caption(text: str, w: int, duration: float) -> ImageClip:
     font = _find_font(CAPTION_SIZE)
     wrapped = textwrap.fill(text, width=MAX_CHARS)
-    lines = wrapped.count("\n") + 1
-    line_h = CAPTION_SIZE + 6
-    total_h = lines * line_h + 20
-    y_offset = BG_HEIGHT - total_h - 10
+    lines_list = wrapped.split("\n")
+    line_h = CAPTION_SIZE + 10
+    pad = OUTLINE_WIDTH
+    total_h = len(lines_list) * line_h + pad * 2
 
-    img = Image.new("RGBA", (w, BG_HEIGHT), (0, 0, 0, 0))
+    img = Image.new("RGBA", (w, total_h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    draw.rounded_rectangle(
-        [(0, y_offset - 4), (w, y_offset + total_h + 4)],
-        radius=12, fill=(0, 0, 0, 180),
-    )
-
-    lines_list = wrapped.split("\n")
     for i, line in enumerate(lines_list):
         bbox = draw.textbbox((0, 0), line, font=font)
         tw = bbox[2] - bbox[0]
         x = (w - tw) // 2
-        y = y_offset + 10 + i * line_h
+        y = pad + i * line_h
 
-        draw.text((x + SHADOW_OFFSET, y + SHADOW_OFFSET), line, font=font, fill=(0, 0, 0, 200))
-        draw.text((x, y), line, font=font, fill="white")
+        draw.text((x, y), line, font=font, fill="white",
+                  stroke_width=OUTLINE_WIDTH, stroke_fill=(0, 0, 0, 230))
 
     return ImageClip(np.array(img)).with_duration(duration)
 
