@@ -1,0 +1,37 @@
+import os
+import json
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+
+SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+TOKEN_FILE = "youtube_token.json"
+
+def _get_authenticated_service():
+    creds = None
+    token_json = os.environ.get("YOUTUBE_TOKEN_JSON")
+    if token_json:
+        creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            raise RuntimeError("YouTube auth required — run auth setup locally first")
+    return build("youtube", "v3", credentials=creds)
+
+def upload(video_path: str, post: dict) -> str:
+    youtube = _get_authenticated_service()
+    body = {
+        "snippet": {
+            "title": f"{post['title']} #shorts",
+            "description": f"Story from r/{post['subreddit']}\n\n{post['permalink']}",
+            "tags": ["shorts", "reddit", "storytime", post["subreddit"]],
+        },
+        "status": {"privacyStatus": "public"},
+    }
+    media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
+    request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
+    response = request.execute()
+    return f"https://youtu.be/{response['id']}"
