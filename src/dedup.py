@@ -4,7 +4,7 @@ from pathlib import Path
 
 HASHES_PATH = Path(__file__).parent.parent / "data" / "story_hashes.json"
 
-SIMILARITY_THRESHOLD = 0.25
+SIMILARITY_THRESHOLD = 0.45
 
 _STOPWORDS = {
     "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",

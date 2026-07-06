@@ -1,3 +1,56 @@
+# Story Variety Improvement Implementation Plan
+
+> **For agentic workers:** Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Make posted stories noticeably more varied day-to-day with 100+ diverse topics and multi-attribute prompt system.
+
+**Architecture:** Modify `src/main.py` (topic list, prompt builder, generation loop) and `src/dedup.py` (threshold) — no new files or dependencies.
+
+**Tech Stack:** Python 3.11+, Groq API (llama-3.3-70b-versatile), standard library `random`
+
+## Global Constraints
+
+- Zero new dependencies — standard library only
+- `is_seen` check must happen immediately on candidate selection (not after upload)
+- GitHub Actions cron schedule untouched (10, 16, 22 UTC)
+- Existing `story_hashes.json` cache in GH Actions carries over transparently
+
+---
+
+### Task 1: Raise dedup threshold
+
+**Files:**
+- Modify: `src/dedup.py:7`
+
+- [ ] **Change SIMILARITY_THRESHOLD to 0.45**
+
+```python
+SIMILARITY_THRESHOLD = 0.45
+```
+
+- [ ] **Commit**
+
+```bash
+git add src/dedup.py
+git commit -m "chore: raise Jaccard dedup threshold from 0.25 to 0.45"
+```
+
+---
+
+### Task 2: Replace topics, add attribute system, randomize seeds, shuffle, 30 attempts
+
+**Files:**
+- Modify: `src/main.py`
+
+**Changes:**
+1. Replace `_TOPICS` list with 100 diverse prompts (no `None` slot)
+2. Add `_TONES`, `_SETTINGS`, `_CHARACTERS` constant lists
+3. Rewrite `_generate_ai_post` to: accept no seed param, pick random topic + random attributes, use random Groq seed
+4. Update `main()` to: shuffle topics, loop 30 attempts, pass attempt index for topic selection
+
+- [ ] **Rewrite `src/main.py`**
+
+```python
 import os
 import asyncio
 import random
@@ -114,6 +167,14 @@ _TOPICS = [
     "Topic: a time you walked away from something toxic.",
     "Topic: the hardest goodbye you ever had to say.",
     "Topic: a moment you chose kindness over being right.",
+    "Topic: the most painful truth someone ever told you.",
+    "Topic: a time you forgave someone who didn't deserve it.",
+    "Topic: the best revenge that wasn't really revenge.",
+    "Topic: a mistake that taught you more than success ever could.",
+    "Topic: a moment you realized social media is not real life.",
+    "Topic: the most out-of-touch thing someone rich said to you.",
+    "Topic: a generational culture clash you experienced.",
+    "Topic: the weirdest subculture you've ever encountered.",
 ]
 
 _TONES = ["funny", "suspenseful", "heartwarming", "bittersweet"]
@@ -205,3 +266,37 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+```
+
+- [ ] **Commit**
+
+```bash
+git add src/main.py
+git commit -m "feat: expand to 100 topics with multi-attribute prompt system"
+```
+
+---
+
+### Task 3: Verify pipeline still works
+
+- [ ] **Run a dry check**
+
+```bash
+cd C:\Users\adamd\yt-shorts-pipeline
+python -c "from src.dedup import is_seen, mark_seen; print('dedup OK'); from src.main import _TOPICS, _TONES, _SETTINGS, _CHARACTERS; print(f'topics={len(_TOPICS)}, tones={len(_TONES)}, settings={len(_SETTINGS)}, chars={len(_CHARACTERS)}')"
+```
+
+Expected output: `dedup OK` and `topics=100, tones=4, settings=4, chars=4`
+
+- [ ] **Check git status is clean**
+
+```bash
+git status
+```
+Expected: clean working tree, everything committed
+
+- [ ] **Push to GitHub**
+
+```bash
+git push origin master
+```
