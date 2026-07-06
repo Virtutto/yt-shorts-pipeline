@@ -126,23 +126,28 @@ def _render_proportional_captions(sentences: list[str], cap_w: int, duration: fl
     return clips
 
 
-def _ken_burns(clip: VideoFileClip) -> VideoFileClip:
-    zoom = random.uniform(1.03, 1.15)
+def _ken_burns(clip: VideoFileClip, target_dur: float | None = None) -> VideoFileClip:
+    zoom = random.uniform(1.02, 1.08)
     nw, nh = int(VIDEO_W * zoom), int(VIDEO_H * zoom)
     zoomed = clip.resized((nw, nh))
 
-    max_dx = max((nw - VIDEO_W) // 2, 1)
-    max_dy = max((nh - VIDEO_H) // 2, 1)
-    dx1, dy1 = random.randint(-max_dx, max_dx), random.randint(-max_dy, max_dy)
-    dx2, dy2 = random.randint(-max_dx, max_dx), random.randint(-max_dy, max_dy)
+    margin_x = (nw - VIDEO_W) // 2
+    margin_y = (nh - VIDEO_H) // 2
+    pan_x = max(int(margin_x * 0.2), 1)
+    pan_y = max(int(margin_y * 0.2), 1)
+    dx1, dy1 = random.randint(-pan_x, pan_x), random.randint(-pan_y, pan_y)
+    dx2, dy2 = random.randint(-pan_x, pan_x), random.randint(-pan_y, pan_y)
 
-    dur = zoomed.duration
+    dur = target_dur if target_dur else zoomed.duration
 
     def pos(t):
-        p = min(t / dur, 1.0)
+        p = t / dur if dur > 0 else 0
         return (dx1 + (dx2 - dx1) * p, dy1 + (dy2 - dy1) * p)
 
-    return zoomed.with_position(pos)
+    result = zoomed.with_position(pos)
+    if target_dur:
+        result = result.with_duration(target_dur)
+    return result
 
 
 def _make_watermark(duration: float) -> ImageClip:
@@ -173,14 +178,13 @@ def _load_broll(broll_dir: str, duration: float) -> VideoFileClip | ColorClip:
         for p in paths:
             if total >= duration:
                 break
-            clip = _ken_burns(VideoFileClip(str(p)))
-            avail = clip.duration
+            src = VideoFileClip(str(p))
             need = duration - total
-            if avail <= need:
-                segments.append(clip)
-                total += avail
+            if src.duration <= need:
+                segments.append(_ken_burns(src))
+                total += src.duration
             else:
-                segments.append(clip.with_duration(need))
+                segments.append(_ken_burns(src, target_dur=need))
                 total = duration
         random.shuffle(paths)
 
