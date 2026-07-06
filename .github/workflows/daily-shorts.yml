@@ -2,7 +2,7 @@ name: Daily Shorts
 
 on:
   schedule:
-    - cron: '0 10,16,22 * * *'
+    - cron: '0 7,10,16,22 * * *'
   workflow_dispatch:
 
 jobs:
