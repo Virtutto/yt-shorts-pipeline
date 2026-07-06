@@ -1,3 +1,4 @@
+import os
 import re
 import random
 from pathlib import Path
@@ -125,6 +126,40 @@ def _render_proportional_captions(sentences: list[str], cap_w: int, duration: fl
     return clips
 
 
+def _ken_burns(clip: VideoFileClip) -> VideoFileClip:
+    zoom = random.uniform(1.03, 1.15)
+    nw, nh = int(VIDEO_W * zoom), int(VIDEO_H * zoom)
+    zoomed = clip.resized((nw, nh))
+
+    max_dx = max((nw - VIDEO_W) // 2, 1)
+    max_dy = max((nh - VIDEO_H) // 2, 1)
+    dx1, dy1 = random.randint(-max_dx, max_dx), random.randint(-max_dy, max_dy)
+    dx2, dy2 = random.randint(-max_dx, max_dx), random.randint(-max_dy, max_dy)
+
+    dur = zoomed.duration
+
+    def pos(t):
+        p = min(t / dur, 1.0)
+        return (dx1 + (dx2 - dx1) * p, dy1 + (dy2 - dy1) * p)
+
+    return zoomed.with_position(pos)
+
+
+def _make_watermark(duration: float) -> ImageClip:
+    channel = os.environ.get("CHANNEL_NAME", "Storytime Shorts")
+    font = _find_font(28)
+    text = f"@{channel}"
+    tmp = Image.new("RGBA", (1, 1))
+    draw = ImageDraw.Draw(tmp)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    pad = 8
+    img = Image.new("RGBA", (tw + pad * 2, th + pad * 2), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw.text((pad, pad), text, font=font, fill=(255, 255, 255, 130))
+    return ImageClip(np.array(img), duration=duration).with_position(("right", "bottom")).with_opacity(0.55)
+
+
 def _load_broll(broll_dir: str, duration: float) -> VideoFileClip | ColorClip:
     paths = sorted(Path(broll_dir).glob("*.mp4"))
     if not paths:
@@ -138,7 +173,7 @@ def _load_broll(broll_dir: str, duration: float) -> VideoFileClip | ColorClip:
         for p in paths:
             if total >= duration:
                 break
-            clip = VideoFileClip(str(p)).resized((VIDEO_W, VIDEO_H))
+            clip = _ken_burns(VideoFileClip(str(p)))
             avail = clip.duration
             need = duration - total
             if avail <= need:
@@ -164,7 +199,8 @@ def assemble(script: str, audio_path: str, broll_dir: str, output_path: str, wor
         sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', script) if s.strip()]
         caption_clips = _render_proportional_captions(sentences, cap_w, duration)
 
-    video = CompositeVideoClip([bg] + caption_clips)
+    watermark = _make_watermark(duration)
+    video = CompositeVideoClip([bg] + caption_clips + [watermark])
     video = video.with_audio(audio)
     video.write_videofile(output_path, codec="libx264", fps=30, preset="fast", audio_codec="aac")
     return output_path

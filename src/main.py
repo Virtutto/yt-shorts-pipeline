@@ -36,9 +36,9 @@ _TOPICS = [
 ]
 
 
-def _generate_fallback_post(seed: int = 0) -> dict:
+def _generate_ai_post(seed: int = 0) -> dict:
     topic = _TOPICS[seed % len(_TOPICS)]
-    print(f"  Generating AI story as fallback (seed {seed})..." + (f" {topic}" if topic else ""))
+    print(f"  Generating AI story (seed {seed})..." + (f" {topic}" if topic else ""))
     client = OpenAI(
         api_key=os.environ["GROQ_API_KEY"],
         base_url="https://api.groq.com/openai/v1",
@@ -68,17 +68,20 @@ def _generate_fallback_post(seed: int = 0) -> dict:
 
 
 async def main():
-    print("[1/5] Scraping Reddit...")
-    post = fetch_post()
+    print("[1/5] Generating story...")
+    post = None
+    for attempt in range(10):
+        candidate = _generate_ai_post(attempt)
+        if not is_seen(candidate["selftext"]):
+            post = candidate
+            break
+        print(f"  Story is a duplicate, retrying (attempt {attempt + 2})...")
     if not post:
-        print("  Reddit unavailable, using AI-generated story")
-        for attempt in range(10):
-            post = _generate_fallback_post(attempt)
-            if not is_seen(post["selftext"]):
-                break
-            print(f"  Story is a duplicate, retrying (attempt {attempt + 2})...")
-        else:
-            print("  Could not generate a unique story after 10 attempts, using last one anyway")
+        print("  AI exhausted, trying Reddit...")
+        post = fetch_post()
+    if not post:
+        print("  All sources empty, using AI anyway")
+        post = _generate_ai_post(0)
 
     print(f"[2/5] Rewriting script for: {post['title']}")
     script = rewrite_story(post)
