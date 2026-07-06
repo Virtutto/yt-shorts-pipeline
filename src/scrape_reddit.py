@@ -5,6 +5,7 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 from .seen_posts import is_seen, mark_seen
+from .dedup import is_seen as is_dup_text
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 HEADERS = {"User-Agent": USER_AGENT}
@@ -121,6 +122,9 @@ def fetch_post(subreddits: list[str] | None = None) -> dict | None:
         for c in candidates:
             selftext = _scrape_selftext(c["link"])
             if selftext or sub.lower() == "askreddit":
+                if selftext and is_dup_text(selftext):
+                    print(f"  Story text is a near-duplicate, skipping")
+                    continue
                 mark_seen(c["post_id"])
                 return {
                     "title": c["title"],

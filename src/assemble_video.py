@@ -1,4 +1,4 @@
-import os
+import re
 import random
 from pathlib import Path
 import numpy as np
@@ -7,8 +7,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 VIDEO_W, VIDEO_H = 1080, 1920
 CAPTION_SIZE = 56
-MAX_CHARS = 38
 OUTLINE_WIDTH = 4
+MAX_CHUNK_LEN = 22
 
 _FONT_CACHE = {}
 
@@ -35,25 +35,35 @@ def _find_font(size: int) -> ImageFont.FreeTypeFont:
     return font
 
 
-MAX_CHUNK_LEN = 22
-
-
-def _render_word_chunks(sentence: str, cap_w: int, total_duration: float) -> list:
-    words = sentence.split()
-    if not words:
-        return []
-
+def _group_words(words: list[str]) -> list[list[str]]:
     chunks = []
     i = 0
     while i < len(words):
         if i + 1 < len(words) and len(words[i] + " " + words[i + 1]) <= MAX_CHUNK_LEN:
-            chunks.append(words[i] + " " + words[i + 1])
+            chunks.append([words[i], words[i + 1]])
             i += 2
         else:
-            chunks.append(words[i])
+            chunks.append([words[i]])
             i += 1
+    return chunks
 
-    chunk_dur = total_duration / max(len(chunks), 1)
+
+def _caption_clip(text: str, cap_w: int, total_h: int, font) -> ImageClip:
+    img = Image.new("RGBA", (cap_w, total_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    tw = bbox[2] - bbox[0]
+    x = (cap_w - tw) // 2
+    draw.text((x, OUTLINE_WIDTH), text, font=font, fill="white",
+              stroke_width=OUTLINE_WIDTH, stroke_fill=(0, 0, 0, 230))
+    return ImageClip(np.array(img))
+
+
+def _render_timed_captions(word_timings: list[dict], cap_w: int, duration: float) -> list:
+    if not word_timings:
+        return []
+    words = [w["text"] for w in word_timings]
+    chunks = _group_words(words)
 
     font = _find_font(CAPTION_SIZE)
     line_h = CAPTION_SIZE + 10
@@ -61,62 +71,100 @@ def _render_word_chunks(sentence: str, cap_w: int, total_duration: float) -> lis
     total_h = line_h + pad * 2
 
     clips = []
-    for idx, chunk in enumerate(chunks):
-        img = Image.new("RGBA", (cap_w, total_h), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
+    wi = 0
+    for ci, cw in enumerate(chunks):
+        start = word_timings[wi]["offset"]
+        if ci < len(chunks) - 1:
+            next_wi = wi + len(cw)
+            end = word_timings[next_wi]["offset"]
+        else:
+            end = word_timings[-1]["offset"] + word_timings[-1]["duration"]
+        chunk_dur = max(end - start, 0.2)
 
-        bbox = draw.textbbox((0, 0), chunk, font=font)
-        tw = bbox[2] - bbox[0]
-        x = (cap_w - tw) // 2
-        y = pad
-
-        draw.text((x, y), chunk, font=font, fill="white",
-                  stroke_width=OUTLINE_WIDTH, stroke_fill=(0, 0, 0, 230))
-
-        clip = ImageClip(np.array(img)).with_duration(chunk_dur)
-        clip = clip.with_position(("center", VIDEO_H * 0.82)).with_start(idx * chunk_dur)
+        text = " ".join(cw)
+        clip = _caption_clip(text, cap_w, total_h, font).with_duration(chunk_dur).with_start(start)
+        clip = clip.with_position(("center", VIDEO_H * 0.82))
         clips.append(clip)
+        wi += len(cw)
+
+    return clips
+
+
+def _render_proportional_captions(sentences: list[str], cap_w: int, duration: float) -> list:
+    if not sentences:
+        return []
+
+    char_counts = [len(s) for s in sentences]
+    total_chars = sum(char_counts)
+
+    font = _find_font(CAPTION_SIZE)
+    line_h = CAPTION_SIZE + 10
+    pad = OUTLINE_WIDTH
+    total_h = line_h + pad * 2
+
+    clips = []
+    elapsed = 0.0
+    for si, sentence in enumerate(sentences):
+        if sentence and sentence[-1] not in ".!?":
+            sentence += "."
+        words = sentence.split()
+        if not words:
+            continue
+        chunks = _group_words(words)
+        sent_dur = (char_counts[si] / total_chars) * duration if total_chars else duration / len(sentences)
+        chunk_dur = sent_dur / max(len(chunks), 1)
+
+        for ci, cw in enumerate(chunks):
+            text = " ".join(cw)
+            clip = _caption_clip(text, cap_w, total_h, font).with_duration(chunk_dur).with_start(elapsed + ci * chunk_dur)
+            clip = clip.with_position(("center", VIDEO_H * 0.82))
+            clips.append(clip)
+
+        elapsed += sent_dur
 
     return clips
 
 
 def _load_broll(broll_dir: str, duration: float) -> VideoFileClip | ColorClip:
-    broll_path = _pick_broll(broll_dir)
-    if not broll_path:
+    paths = sorted(Path(broll_dir).glob("*.mp4"))
+    if not paths:
         return ColorClip(size=(VIDEO_W, VIDEO_H), color=(16, 32, 48), duration=duration)
-    bg = VideoFileClip(broll_path).resized((VIDEO_W, VIDEO_H))
-    if bg.duration < duration:
-        n_loops = int(duration // bg.duration) + 1
-        bg = concatenate_videoclips([bg.copy() for _ in range(n_loops)], method="chain").with_duration(duration)
-    else:
-        bg = bg.with_duration(duration)
-    return bg
+
+    random.shuffle(paths)
+    segments = []
+    total = 0.0
+
+    while total < duration:
+        for p in paths:
+            if total >= duration:
+                break
+            clip = VideoFileClip(str(p)).resized((VIDEO_W, VIDEO_H))
+            avail = clip.duration
+            need = duration - total
+            if avail <= need:
+                segments.append(clip)
+                total += avail
+            else:
+                segments.append(clip.with_duration(need))
+                total = duration
+        random.shuffle(paths)
+
+    return concatenate_videoclips(segments, method="chain")
 
 
-def _pick_broll(broll_dir: str) -> str | None:
-    clips = list(Path(broll_dir).glob("*.mp4"))
-    return str(random.choice(clips)) if clips else None
-
-
-def assemble(script: str, audio_path: str, broll_dir: str, output_path: str) -> str:
+def assemble(script: str, audio_path: str, broll_dir: str, output_path: str, word_timings: list[dict] | None = None) -> str:
     audio = AudioFileClip(audio_path)
     duration = audio.duration
-
     bg = _load_broll(broll_dir, duration)
-
-    clips = [bg]
-    sentences = [s.strip() for s in script.replace("! ", "!\n").replace("? ", "?\n").split(". ") if s.strip()]
-    chunk = duration / max(len(sentences), 1)
-
     cap_w = VIDEO_W - 80
 
-    for i, sentence in enumerate(sentences):
-        word_clips = _render_word_chunks(sentence + ".", cap_w, chunk)
-        sent_start = i * chunk
-        for wc in word_clips:
-            clips.append(wc.with_start(wc.start + sent_start))
+    if word_timings:
+        caption_clips = _render_timed_captions(word_timings, cap_w, duration)
+    else:
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', script) if s.strip()]
+        caption_clips = _render_proportional_captions(sentences, cap_w, duration)
 
-    video = CompositeVideoClip(clips)
+    video = CompositeVideoClip([bg] + caption_clips)
     video = video.with_audio(audio)
     video.write_videofile(output_path, codec="libx264", fps=30, preset="fast", audio_codec="aac")
     return output_path

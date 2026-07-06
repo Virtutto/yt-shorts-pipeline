@@ -1,4 +1,5 @@
 import os
+import asyncio
 import tempfile
 from pathlib import Path
 from openai import OpenAI
@@ -22,6 +23,16 @@ _TOPICS = [
     "Topic: a coincidence that seemed impossible.",
     "Topic: an embarrassing moment in public.",
     "Topic: a story about a family tradition.",
+    "Topic: the worst date you've ever been on.",
+    "Topic: a time you stood up for someone.",
+    "Topic: a creepy or unexplainable experience.",
+    "Topic: something your pet did that blew your mind.",
+    "Topic: a lesson you learned the hard way.",
+    "Topic: the most scared you've ever been.",
+    "Topic: a time you accidentally broke something important.",
+    "Topic: the best decision you ever made on a whim.",
+    "Topic: a moment you felt like you were in a movie.",
+    "Topic: something a stranger said that stuck with you.",
 ]
 
 
@@ -42,6 +53,8 @@ def _generate_fallback_post(seed: int = 0) -> dict:
     resp = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
+        seed=seed + 42,
+        temperature=0.9,
     )
     story = resp.choices[0].message.content.strip()
     title = story.split(".")[0] if "." in story else story[:80]
@@ -54,7 +67,7 @@ def _generate_fallback_post(seed: int = 0) -> dict:
     }
 
 
-def main():
+async def main():
     print("[1/5] Scraping Reddit...")
     post = fetch_post()
     if not post:
@@ -73,11 +86,11 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         audio_path = f"{tmp}/audio.mp3"
         print("[3/5] Generating TTS...")
-        generate_tts(script, audio_path)
+        word_timings = await generate_tts(script, audio_path)
 
         video_path = f"{tmp}/output.mp4"
         print("[4/5] Assembling video...")
-        assemble(script, audio_path, BROLL_DIR, video_path)
+        assemble(script, audio_path, BROLL_DIR, video_path, word_timings)
 
         print("[5/5] Uploading to YouTube...")
         url = upload(video_path, post)
@@ -86,4 +99,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
